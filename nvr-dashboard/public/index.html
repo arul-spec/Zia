@@ -1,30 +1,127 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>NVR Dashboard (Mock)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>NVR Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #111; color: #eee; margin:0; }
+    header { padding: 18px; background:#151515; border-bottom:1px solid #222; }
+    h1 { margin:0; font-size:20px; }
+    .wrap { display:flex; gap:20px; padding:20px; box-sizing:border-box; }
+    .left { flex:2; }
+    .right { flex:1; max-width:420px; }
+    .camera-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; }
+    .camera { background:#1b1b1b; padding:10px; border-radius:8px; border:2px solid transparent; transition: border-color .2s ease; }
+    .camera.highlight { border-color: #1fb6ff; box-shadow: 0 4px 14px rgba(31,182,255,0.08); }
+    .camera h2 { margin:0 0 8px 0; font-size:16px; color:#fff; }
+    video { width:100%; height:auto; display:block; border-radius:6px; background:#000; }
+    .events { background:#121212; padding:10px; border-radius:8px; max-height:80vh; overflow:auto; }
+    .event { padding:8px; border-bottom:1px solid #222; font-size:13px; display:flex; gap:8px; align-items:center; }
+    .time { color:#999; font-size:12px; min-width:160px; }
+    .thumb { width:80px; height:56px; background:#333; border-radius:4px; object-fit:cover; }
+  </style>
 </head>
 <body>
-  <h1>Mock NVR Dashboard</h1>
-  <div id="cameras"></div>
-  <div id="events"></div>
+  <header>
+    <h1>Mock NVR Dashboard</h1>
+  </header>
+
+  <div class="wrap">
+    <div class="left">
+      <h3 style="margin:8px 0; color:#ccc">Cameras</h3>
+      <div id="cameraGrid" class="camera-grid"></div>
+    </div>
+
+    <div class="right">
+      <h3 style="margin:8px 0; color:#ccc">Events</h3>
+      <div id="events" class="events"></div>
+    </div>
+  </div>
 
   <script>
-    fetch('/api/cameras').then(res => res.json()).then(data => {
-      document.getElementById('cameras').innerHTML = '<h2>Cameras</h2>' +
-        data.map(c => `<div>${c.name} - ${c.status}</div>`).join('');
-    });
+    const cameraGrid = document.getElementById('cameraGrid');
+    const eventsEl = document.getElementById('events');
+    const wsProto = (location.protocol === 'https:') ? 'wss' : 'ws';
+    const wsUrl = `${wsProto}://${location.host}`;
 
-    fetch('/api/events').then(res => res.json()).then(data => {
-      document.getElementById('events').innerHTML = '<h2>Events</h2>' +
-        data.map(e => `<div>${new Date(e.time)} - Camera ${e.cameraId}</div>`).join('');
-    });
+    // Fetch and render cameras
+    async function loadCameras() {
+      const res = await fetch('/api/cameras');
+      const cams = await res.json();
+      cameraGrid.innerHTML = '';
+      cams.forEach(cam => {
+        const div = document.createElement('div');
+        div.className = 'camera';
+        div.id = `cam-${cam.id}`;
+        div.innerHTML = `
+          <h2>${cam.name} - <small style="color:#9b9b9b">${cam.status}</small></h2>
+          <video playsinline controls muted autoplay loop preload="auto">
+            <source src="${cam.src}" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+        `;
+        cameraGrid.appendChild(div);
+      });
+    }
 
-    const ws = new WebSocket(`ws://${location.host}`);
-    ws.onmessage = (msg) => {
-      const e = JSON.parse(msg.data);
-      console.log("Live Event:", e);
-    };
+    // Fetch and render recent events
+    async function loadEvents() {
+      const res = await fetch('/api/events');
+      const evs = await res.json();
+      eventsEl.innerHTML = '';
+      evs.forEach(e => appendEvent(e, false));
+    }
+
+    // Append one event
+    function appendEvent(e, prepend=true) {
+      const el = document.createElement('div');
+      el.className = 'event';
+      const time = new Date(e.time).toLocaleString();
+      el.innerHTML = `
+        <div class="time">${time}</div>
+        <div style="flex:1">
+          <div style="font-weight:600">${e.message || e.type}</div>
+          <div style="color:#999; font-size:12px">Camera ${e.cameraId}</div>
+        </div>
+        <img class="thumb" src="${e.thumbnail || ''}" alt="thumb" onerror="this.style.display='none'"/>
+      `;
+      if (prepend) eventsEl.prepend(el); else eventsEl.appendChild(el);
+
+      // highlight camera tile
+      highlightCamera(e.cameraId);
+    }
+
+    // Highlight a camera tile briefly
+    function highlightCamera(id) {
+      const sel = document.getElementById(`cam-${id}`);
+      if (!sel) return;
+      sel.classList.add('highlight');
+      setTimeout(() => sel.classList.remove('highlight'), 2000);
+    }
+
+    // Open WebSocket for live events
+    function startWS() {
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => console.log('WS connected');
+      ws.onmessage = (msg) => {
+        try {
+          const p = JSON.parse(msg.data);
+          if (p.kind === 'event') appendEvent(p.data, true);
+        } catch (err) {
+          console.warn('WS parse error', err);
+        }
+      };
+      ws.onclose = () => setTimeout(startWS, 3000); // reconnect
+      ws.onerror = (e) => console.error('WS error', e);
+    }
+
+    // Init
+    (async function() {
+      await loadCameras();
+      await loadEvents();
+      startWS();
+    })();
   </script>
 </body>
 </html>
-
