@@ -1,10 +1,11 @@
 {
   "name": "nvr-dashboard",
   "version": "1.0.0",
-  "description": "Mock NVR dashboard and API for Render + GitHub pipeline",
+  "description": "Mock NVR dashboard for Render + GitHub",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "echo 'No build step needed'"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -16,4 +17,3 @@
   "license": "Apache-2.0",
   "author": "AC"
 }
-
