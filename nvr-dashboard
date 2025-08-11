@@ -1,1 +1,4 @@
-
+nvr-dashboard/
+  server.js      → API + mock event generator
+  public/        → HTML, CSS, JS for dashboard
+  package.json
