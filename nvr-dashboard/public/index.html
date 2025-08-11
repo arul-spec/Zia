@@ -1,1 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>NVR Dashboard (Mock)</title>
+</head>
+<body>
+  <h1>Mock NVR Dashboard</h1>
+  <div id="cameras"></div>
+  <div id="events"></div>
+
+  <script>
+    fetch('/api/cameras').then(res => res.json()).then(data => {
+      document.getElementById('cameras').innerHTML = '<h2>Cameras</h2>' +
+        data.map(c => `<div>${c.name} - ${c.status}</div>`).join('');
+    });
+
+    fetch('/api/events').then(res => res.json()).then(data => {
+      document.getElementById('events').innerHTML = '<h2>Events</h2>' +
+        data.map(e => `<div>${new Date(e.time)} - Camera ${e.cameraId}</div>`).join('');
+    });
+
+    const ws = new WebSocket(`ws://${location.host}`);
+    ws.onmessage = (msg) => {
+      const e = JSON.parse(msg.data);
+      console.log("Live Event:", e);
+    };
+  </script>
+</body>
+</html>
 
