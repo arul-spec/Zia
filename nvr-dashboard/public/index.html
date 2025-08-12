@@ -1,43 +1,228 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Zia NVR</title>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.5/dist/hls.min.js"></script>
-<style>
-  body{background:#111;color:#eee;font-family:Arial;margin:0;padding:16px}
-  .grid{display:flex;gap:12px}
-  .cam{background:#222;padding:12px;border-radius:8px;width:480px}
-  video{width:100%;border-radius:6px;background:#000}
-</style>
+  <meta charset="utf-8" />
+  <title>NVR Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --bg:#0f1113; --panel:#191b1e; --muted:#9aa0a6; --accent:#1fb6ff; color-scheme: dark; }
+    html,body{height:100%; margin:0; font-family: Inter, system-ui, Arial; background:var(--bg); color:#e6eef3;}
+    header{display:flex; align-items:center; gap:16px; padding:14px 20px; background:linear-gradient(180deg,#111316, #0f1113); border-bottom:1px solid #141516}
+    header h1{margin:0; font-size:18px}
+    nav { margin-left:20px; }
+    nav button { background:transparent; color:var(--muted); border:0; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    nav button.active{ color:#fff; background:rgba(255,255,255,0.03); box-shadow: inset 0 -2px 0 rgba(31,182,255,0.12);}
+    main{display:flex; gap:18px; padding:18px;}
+    .left{flex:2}
+    .right{width:340px}
+    .panel{background:var(--panel); padding:14px; border-radius:10px; box-shadow: 0 2px 10px rgba(0,0,0,0.4);}
+    .camera-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px;}
+    .cam-card{padding:10px; border-radius:8px; background:#0f1213;}
+    .cam-card h3{margin:0 0 8px 0; font-size:15px}
+    .cam-card .url{color:var(--muted); font-size:12px; margin-bottom:8px; overflow:hidden; text-overflow:ellipsis}
+    .form-row{display:flex; gap:8px; margin-bottom:8px}
+    input[type=text]{flex:1; padding:8px; border-radius:6px; border:1px solid #2a2d30; background:#0a0b0c; color:#fff}
+    button.primary{background:var(--accent); color:#001322; border:0; padding:8px 12px; border-radius:7px; cursor:pointer}
+    .small{font-size:13px; color:var(--muted)}
+    table.events{width:100%; border-collapse:collapse}
+    table.events td{padding:8px 6px; border-bottom:1px solid #161718}
+    .controls{display:flex; gap:6px}
+    .btn{padding:6px 8px; border-radius:6px; border:0; cursor:pointer; background:#26292b; color:#ddd}
+  </style>
 </head>
 <body>
-  <h1>Dashboard</h1>
-  <div id="grid" class="grid"></div>
-  <script>
-    async function loadCams() {
-      const res = await fetch('/api/cameras');
-      const cams = await res.json();
-      const grid = document.getElementById('grid');
-      for (const cam of cams) {
-        const card = document.createElement('div'); card.className='cam';
-        const title = document.createElement('h3'); title.textContent = cam.name;
-        const video = document.createElement('video'); video.controls = true; video.autoplay = true; video.muted = true;
-        card.appendChild(title); card.appendChild(video);
-        grid.appendChild(card);
+  <header>
+    <h1>NVR Dashboard</h1>
+    <nav>
+      <button id="nav-dashboard" class="active" onclick="show('dashboard')">Dashboard</button>
+      <button id="nav-cameras" onclick="show('cameras')">Cameras</button>
+      <button id="nav-playback" onclick="show('playback')">Playback</button>
+      <button id="nav-settings" onclick="show('settings')">Settings</button>
+    </nav>
+  </header>
 
-        // HLS.js playback for browsers
-        if (Hls.isSupported()) {
-          const hls = new Hls();
-          hls.loadSource(cam.hls);
-          hls.attachMedia(video);
-        } else {
-          // native HLS (Safari)
-          video.src = cam.hls;
-        }
-      }
+  <main>
+    <div class="left">
+      <div id="page-dashboard" class="panel" style="display:block">
+        <h2>Live overview</h2>
+        <p class="small">Quick live preview and event timeline (preview works for http/mp4 test URLs). Use Cameras to add RTSP/HTTP streams.</p>
+        <div id="live-preview" class="camera-grid" style="margin-top:12px"></div>
+      </div>
+
+      <div id="page-cameras" class="panel" style="display:none">
+        <h2>Cameras</h2>
+        <p class="small">Add or manage camera sources (RTSP or HTTP test URLs). Later this will integrate ONVIF discovery.</p>
+
+        <div style="margin-top:12px; margin-bottom:12px;">
+          <div class="form-row">
+            <input id="newName" placeholder="Camera name (e.g., Front Gate)" />
+            <input id="newUrl" placeholder="Stream URL (rtsp:// or https://... or mp4 test URL)" />
+            <button class="primary" id="addBtn">Add Camera</button>
+          </div>
+        </div>
+
+        <div id="cameraGrid" class="camera-grid"></div>
+      </div>
+
+      <div id="page-playback" class="panel" style="display:none">
+        <h2>Playback</h2>
+        <p class="small">Search recorded clips by date/time or events. (will be enabled once recording engine is attached)</p>
+      </div>
+
+      <div id="page-settings" class="panel" style="display:none">
+        <h2>Settings</h2>
+        <p class="small">Storage, compression, network, and system options (we'll wire these next).</p>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="panel">
+        <h3>Events</h3>
+        <table class="events" id="eventsTable">
+          <tbody>
+            <tr><td>No events yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+<script>
+  // Basic SPA navigation
+  function show(page) {
+    ['dashboard','cameras','playback','settings'].forEach(p => {
+      document.getElementById('page-' + p).style.display = (p === page ? 'block' : 'none');
+      document.getElementById('nav-' + p).classList.toggle('active', p === page);
+    });
+    if (page === 'cameras') loadCameras();
+    if (page === 'dashboard') loadPreviewCards();
+  }
+
+  // API helpers
+  async function api(path, method='GET', body=null) {
+    const opts = { method, headers: {} };
+    if (body) { opts.headers['Content-Type']='application/json'; opts.body = JSON.stringify(body); }
+    const res = await fetch('/api' + path, opts);
+    if (!res.ok) throw new Error('API error ' + res.status);
+    return res.json();
+  }
+
+  // Load cameras into Cameras page
+  async function loadCameras() {
+    try {
+      const cams = await api('/cameras');
+      const grid = document.getElementById('cameraGrid');
+      grid.innerHTML = '';
+      if (cams.length === 0) grid.innerHTML = '<div class="small">No cameras configured.</div>';
+      cams.forEach(cam => {
+        const el = document.createElement('div');
+        el.className = 'cam-card';
+        el.innerHTML = `
+          <h3>${escapeHtml(cam.name)} <span class="small">- ${escapeHtml(cam.id)}</span></h3>
+          <div class="url">${escapeHtml(cam.url)}</div>
+          <div style="display:flex; gap:8px; align-items:center">
+            <button class="btn" onclick="preview('${cam.id}')">Preview</button>
+            <button class="btn" onclick="showEdit('${cam.id}')">Edit</button>
+            <button class="btn" onclick="removeCam('${cam.id}')">Delete</button>
+            <div style="flex:1"></div>
+          </div>
+          <div id="edit-${cam.id}" style="display:none; margin-top:8px">
+            <div class="form-row">
+              <input id="name-${cam.id}" value="${escapeAttr(cam.name)}" />
+              <input id="url-${cam.id}" value="${escapeAttr(cam.url)}" />
+              <button class="primary" onclick="saveEdit('${cam.id}')">Save</button>
+            </div>
+          </div>
+        `;
+        grid.appendChild(el);
+      });
+    } catch (err) {
+      alert('Failed to load cameras: ' + err.message);
     }
-    loadCams();
-  </script>
+  }
+
+  // Add camera
+  document.getElementById('addBtn').addEventListener('click', async () => {
+    const name = document.getElementById('newName').value.trim();
+    const url = document.getElementById('newUrl').value.trim();
+    if (!name || !url) { alert('Enter name and URL'); return; }
+    try {
+      await api('/cameras', 'POST', { name, url });
+      document.getElementById('newName').value=''; document.getElementById('newUrl').value='';
+      loadCameras();
+      loadPreviewCards();
+    } catch (e) { alert('Add failed: ' + e.message); }
+  });
+
+  // Delete camera
+  async function removeCam(id) {
+    if (!confirm('Delete camera ' + id + '?')) return;
+    await api('/cameras/' + encodeURIComponent(id), 'DELETE');
+    loadCameras();
+    loadPreviewCards();
+  }
+
+  // Edit UI toggles
+  function showEdit(id) {
+    const el = document.getElementById('edit-' + id);
+    el.style.display = (el.style.display === 'none' ? 'block' : 'none');
+  }
+  async function saveEdit(id) {
+    const name = document.getElementById('name-' + id).value.trim();
+    const url = document.getElementById('url-' + id).value.trim();
+    await api('/cameras/' + encodeURIComponent(id), 'PUT', { name, url });
+    loadCameras();
+    loadPreviewCards();
+  }
+
+  // Dashboard: preview cards (simple, uses <video> for http/mp4)
+  async function loadPreviewCards() {
+    const out = document.getElementById('live-preview');
+    out.innerHTML = '';
+    const cams = await api('/cameras');
+    cams.forEach(cam => {
+      const card = document.createElement('div');
+      card.className = 'cam-card';
+      card.innerHTML = `<h3>${escapeHtml(cam.name)}</h3>
+        <div class="url">${escapeHtml(cam.id)}</div>
+        <div style="margin-top:8px">
+          <video width="320" controls autoplay muted loop playsinline style="background:#000;"></video>
+        </div>`;
+      // attach video source if http/mp4; RTSP won't play directly in browser
+      const v = card.querySelector('video');
+      if (cam.url.startsWith('http') && (cam.url.endsWith('.mp4') || cam.url.includes('.m3u8'))) {
+        v.src = cam.url;
+      } else {
+        // show placeholder and hint
+        v.poster = '';
+        v.insertAdjacentHTML('afterend', `<div class="small" style="margin-top:6px;color:var(--muted)">Preview (RTSP streams require the local NVR engine for browser preview)</div>`);
+      }
+      out.appendChild(card);
+    });
+  }
+
+  // Preview single camera (opens small popup)
+  async function preview(id) {
+    const cams = await api('/cameras');
+    const cam = cams.find(c => c.id === id);
+    if (!cam) return alert('Camera not found');
+    // If URL is HTTP playable, open in new tab; else instruct user
+    if (cam.url.startsWith('http') && (cam.url.endsWith('.mp4') || cam.url.includes('.m3u8'))) {
+      window.open(cam.url, '_blank');
+    } else {
+      alert('Preview for RTSP streams requires the local NVR preview server (we will wire this next). For now add an mp4/http test URL to preview here.');
+    }
+  }
+
+  // small helpers
+  function escapeHtml(s){ return String(s || '').replace(/[&<>"]/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function escapeAttr(s){ return (s||'').replace(/"/g,'&quot;'); }
+
+  // Init
+  (async ()=> {
+    await loadPreviewCards();
+  })();
+</script>
+
 </body>
 </html>
