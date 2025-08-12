@@ -1,1 +1,5 @@
+[
+  { "id": "cam1", "name": "Front Gate (test)", "url": "https://www.w3schools.com/html/mov_bbb.mp4" },
+  { "id": "cam2", "name": "Lobby (test)", "url": "https://www.w3schools.com/html/movie.mp4" }
+]
 
